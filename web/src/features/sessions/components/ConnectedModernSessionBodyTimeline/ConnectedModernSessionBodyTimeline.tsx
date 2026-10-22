@@ -34,6 +34,9 @@ type ConnectedModernSessionBodyTimelineProps = {
   sidebarMode?: ComponentProps<
     typeof ConnectedSessionConversationTimeline
   >["sidebarMode"];
+  annotationActions?: ComponentProps<
+    typeof ConnectedSessionConversationTimeline
+  >["annotationActions"];
 };
 
 export function ConnectedModernSessionBodyTimeline({
@@ -44,6 +47,7 @@ export function ConnectedModernSessionBodyTimeline({
   openPeek,
   filterState,
   sidebarMode,
+  annotationActions,
 }: ConnectedModernSessionBodyTimelineProps) {
   const traces =
     tracesState.type === "loaded" ? tracesState.traces : EMPTY_TRACES;
@@ -265,6 +269,7 @@ export function ConnectedModernSessionBodyTimeline({
       resultsByTraceId={resultsByTraceId}
       scrollTarget={scrollTarget}
       sidebarMode={sidebarMode}
+      annotationActions={annotationActions}
     />
   );
 }

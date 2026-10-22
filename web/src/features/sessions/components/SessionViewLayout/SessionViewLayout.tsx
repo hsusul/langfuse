@@ -1,4 +1,5 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode } from "react";
+import useSessionStorage from "@/src/components/useSessionStorage";
 import { PanelLeftClose, PanelLeftOpen, Search } from "@langfuse/icons";
 import { Button as IconButton } from "@/src/components/ui/button";
 import { Tooltip } from "@/src/components/design-system/Tooltip/Tooltip";
@@ -27,7 +28,10 @@ export function SessionViewLayout({
   children: ReactNode;
   sidebarMode?: "fixed" | "collapsible";
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useSessionStorage(
+    "annotation-session-conversation-sidebar:open",
+    true,
+  );
   const [workspaceRef, workspaceSize] = useElementSize<HTMLDivElement>();
   const showSidebar = (workspaceSize?.width ?? 0) >= 768;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -90,29 +94,31 @@ export function SessionViewLayout({
           </DialogController>
         </div>
       )}
-      {showSidebar && sidebarMode === "collapsible" ? (
+      {/* Keep the timeline mounted across sidebar breakpoints for scrolling and highlights. */}
+      {sidebarMode === "collapsible" ? (
         <div className="min-h-0 flex-1">
           <ResizableSplitLayout
             primaryContent={children}
             secondaryContent={
               <div className="bg-surface flex h-full flex-col overflow-hidden">
-                {!isSidebarOpen && (
+                {showSidebar && !isSidebarOpen && (
                   <div className="box-content flex h-7 shrink-0 items-center justify-center border-b py-4">
                     {sidebarToggle}
                   </div>
                 )}
-                <div className={isSidebarOpen ? "min-h-0 flex-1" : "hidden"}>
+                <div className={showSidebar && isSidebarOpen ? "min-h-0 flex-1" : "hidden"}>
                   {renderSidebar(() => {}, isSidebarOpen ? sidebarToggle : undefined)}
                 </div>
               </div>
             }
-            open={isSidebarOpen}
-            onOpenChange={setIsSidebarOpen}
+            open={showSidebar && isSidebarOpen}
+            onOpenChange={showSidebar ? setIsSidebarOpen : undefined}
+            showHandle={showSidebar}
             defaultPrimarySize={76}
             defaultSecondarySize={24}
             minPrimarySize={50}
             maxSecondarySize={50}
-            collapsedSecondarySize="40px"
+            collapsedSecondarySize={showSidebar ? "40px" : "0%"}
             minSecondarySize="200px"
             secondaryPosition="left"
             persistId="annotation-session-conversation-sidebar"
