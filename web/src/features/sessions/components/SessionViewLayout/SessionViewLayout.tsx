@@ -1,5 +1,8 @@
-import { type ReactNode } from "react";
-import { Search } from "@langfuse/icons";
+import { type ReactNode, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen, Search } from "@langfuse/icons";
+import { Button as IconButton } from "@/src/components/ui/button";
+import { Tooltip } from "@/src/components/design-system/Tooltip/Tooltip";
+import { ResizableSplitLayout } from "@/src/components/ui/ResizableSplitLayout";
 import { Button } from "@/src/components/design-system/Button/Button";
 import { Dialog } from "@/src/components/design-system/Dialog/Dialog";
 import { DialogController } from "@/src/components/design-system/DialogController/DialogController";
@@ -16,12 +19,15 @@ export function SessionViewLayout({
   search,
   isLoading,
   children,
+  sidebarMode,
 }: {
-  renderSidebar: (onNavigate: () => void) => ReactNode;
+  renderSidebar: (onNavigate: () => void, searchLeading?: ReactNode) => ReactNode;
   search: string;
   isLoading: boolean;
   children: ReactNode;
+  sidebarMode?: "fixed" | "collapsible";
 }) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [workspaceRef, workspaceSize] = useElementSize<HTMLDivElement>();
   const showSidebar = (workspaceSize?.width ?? 0) >= 768;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -29,6 +35,30 @@ export function SessionViewLayout({
     panelIds: ["sidebar", "timeline"],
     storage: "session",
   });
+  const sidebarToggle = (
+    <Tooltip
+      label={isSidebarOpen ? "Hide session sidebar" : "Show session sidebar"}
+      placement={isSidebarOpen ? "top" : "right"}
+    >
+      {({ getTriggerProps }) => (
+        <IconButton
+          {...getTriggerProps()}
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          aria-label={isSidebarOpen ? "Hide session sidebar" : "Show session sidebar"}
+          aria-expanded={isSidebarOpen}
+          className="h-6 w-6 shrink-0"
+        >
+          {isSidebarOpen ? (
+            <PanelLeftClose size="base" color="default" />
+          ) : (
+            <PanelLeftOpen size="base" color="default" />
+          )}
+        </IconButton>
+      )}
+    </Tooltip>
+  );
   return (
     <div
       ref={workspaceRef}
@@ -60,6 +90,35 @@ export function SessionViewLayout({
           </DialogController>
         </div>
       )}
+      {showSidebar && sidebarMode === "collapsible" ? (
+        <div className="min-h-0 flex-1">
+          <ResizableSplitLayout
+            primaryContent={children}
+            secondaryContent={
+              <div className="bg-surface flex h-full flex-col overflow-hidden">
+                {!isSidebarOpen && (
+                  <div className="box-content flex h-7 shrink-0 items-center justify-center border-b py-4">
+                    {sidebarToggle}
+                  </div>
+                )}
+                <div className={isSidebarOpen ? "min-h-0 flex-1" : "hidden"}>
+                  {renderSidebar(() => {}, isSidebarOpen ? sidebarToggle : undefined)}
+                </div>
+              </div>
+            }
+            open={isSidebarOpen}
+            onOpenChange={setIsSidebarOpen}
+            defaultPrimarySize={76}
+            defaultSecondarySize={24}
+            minPrimarySize={50}
+            maxSecondarySize={50}
+            collapsedSecondarySize="40px"
+            minSecondarySize="200px"
+            secondaryPosition="left"
+            persistId="annotation-session-conversation-sidebar"
+          />
+        </div>
+      ) : (
       <ResizablePanelGroup
         orientation="horizontal"
         className="min-h-0 min-w-0 flex-1"
@@ -84,6 +143,7 @@ export function SessionViewLayout({
           {children}
         </ResizablePanel>
       </ResizablePanelGroup>
+      )}
     </div>
   );
 }

@@ -2307,6 +2307,7 @@ function SessionConversationalViewStory({
   pageOffset = 0,
   delayedLoad = false,
   delayedSearch = false,
+  sidebarMode,
 }: {
   workflowTraces?: WorkflowFixture[];
   transcriptTraces?: TraceProps[];
@@ -2319,6 +2320,7 @@ function SessionConversationalViewStory({
   pageOffset?: number;
   delayedLoad?: boolean;
   delayedSearch?: boolean;
+  sidebarMode?: ComponentProps<typeof SessionConversationalView>["sidebarMode"];
 }) {
   const [transcriptsLoaded, setTranscriptsLoaded] = useState(!delayedLoad);
   const [search, setSearch] = useState("");
@@ -2421,6 +2423,7 @@ function SessionConversationalViewStory({
     return (
       <div className="@container/session-workspace flex h-screen min-w-[320px]">
         <SessionConversationalView
+          sidebarMode={sidebarMode}
           state="loading"
           traces={displayedTraces.map((item) => ({
             ...item,
@@ -2455,6 +2458,7 @@ function SessionConversationalViewStory({
         </button>
       )}
       <SessionConversationalView
+        sidebarMode={sidebarMode}
         state="loaded"
         search={search}
         searchQuery={
@@ -2626,6 +2630,34 @@ const meta = preview.meta({
   parameters: { layout: "fullscreen" },
 });
 export default meta;
+
+export const CollapsibleSidebar = meta.story({
+  name: "(Test) Collapsible annotation sidebar",
+  args: {
+    sidebarMode: "collapsible",
+    viewportWidth: 1000,
+    viewportHeight: 600,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = await canvas.findByRole("textbox", {
+      name: "Search session",
+    });
+    await userEvent.type(search, "order");
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Hide session sidebar" }),
+    );
+    await expect(search).not.toBeVisible();
+    await expect(
+      canvas.getByLabelText("Session conversation timeline"),
+    ).toBeVisible();
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Show session sidebar" }),
+    );
+    await expect(search).toBeVisible();
+    await expect(search).toHaveValue("order");
+  },
+});
 
 export const MixedToolContent = meta.story({
   name: "(Test) Mixed Tool Content",

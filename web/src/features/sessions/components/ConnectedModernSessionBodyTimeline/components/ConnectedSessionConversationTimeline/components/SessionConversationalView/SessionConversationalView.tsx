@@ -27,7 +27,7 @@ export function SessionConversationalView(
           ComponentProps<typeof SessionConversationSidebar>,
           { state: "loaded" }
         >,
-        "traces" | "activeTraceId"
+        "traces" | "activeTraceId" | "searchLeading"
       > & {
         searchQuery: string;
         isSearchPending: boolean;
@@ -40,6 +40,7 @@ export function SessionConversationalView(
       typeof SessionConversationTimeline
     >["traces"][number] & { trace: EventSessionTrace })[];
     controller: SessionConversationTimelineController;
+    sidebarMode?: "fixed" | "collapsible";
   },
 ) {
   const { customization } = props;
@@ -266,18 +267,21 @@ export function SessionConversationalView(
         };
   return (
     <SessionViewLayout
+      sidebarMode={props.sidebarMode}
       search={props.state === "loaded" ? props.search : ""}
       isLoading={props.state === "loading"}
-      renderSidebar={(onNavigate) =>
+      renderSidebar={(onNavigate, searchLeading) =>
         sidebarProps.state === "loading" ? (
           <SessionConversationSidebar
             state="loading"
             customization={customization}
+            searchLeading={searchLeading}
           />
         ) : (
           <SessionConversationSidebar
             {...sidebarProps}
             customization={customization}
+            searchLeading={searchLeading}
             onSelect={(...args) => {
               sidebarProps.onSelect(...args);
               onNavigate();

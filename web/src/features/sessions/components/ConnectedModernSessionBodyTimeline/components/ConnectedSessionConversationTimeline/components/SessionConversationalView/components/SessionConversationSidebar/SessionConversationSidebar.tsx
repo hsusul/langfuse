@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type ReactNode,
   type UIEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -75,6 +76,7 @@ export function SessionConversationSidebar(
       }
   ) & {
     searchVisibility?: "hidden";
+    searchLeading?: ReactNode;
     customization?: {
       activeFilterCount: number;
       onCustomizeView: () => void;
@@ -238,6 +240,7 @@ export function SessionConversationSidebar(
     return (
       <SessionSidebar
         label="Session messages and tools"
+        searchLeading={props.searchLeading}
         isLoading
         search={
           props.searchVisibility !== "hidden"
@@ -263,6 +266,7 @@ export function SessionConversationSidebar(
   return (
     <SessionSidebar
       label="Session messages and tools"
+      searchLeading={props.searchLeading}
       isListScrolled={isListScrolled}
       search={
         props.searchVisibility !== "hidden"
