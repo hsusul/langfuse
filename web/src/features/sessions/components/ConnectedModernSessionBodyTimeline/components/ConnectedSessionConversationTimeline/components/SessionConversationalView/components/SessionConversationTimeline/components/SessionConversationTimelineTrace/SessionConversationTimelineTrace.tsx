@@ -81,7 +81,9 @@ export function SessionConversationTimelineTrace({
     (thread) => thread.threadIndex === threadIndex,
   );
   const showHeader =
-    variant !== "single-trace" ? visibleThreadIndex <= 0 : (threadCount ?? 0) > 1;
+    variant !== "single-trace"
+      ? visibleThreadIndex <= 0
+      : (threadCount ?? 0) > 1;
   const showThreadHeader =
     variant !== "single-trace" &&
     visibleThreads.length > 1 &&
@@ -313,7 +315,9 @@ export function SessionConversationTimelineTrace({
           {state.type === "transcript" && (
             <SessionTranscriptContent
               includeNestedThreads={includeNestedThreads}
-              variant={variant === "embedded-session" ? "single-trace" : variant}
+              variant={
+                variant === "embedded-session" ? "single-trace" : variant
+              }
               {...state}
               onOpenObservation={onOpenObservation}
               scrollTarget={scrollTarget}

@@ -22,7 +22,10 @@ export function SessionViewLayout({
   children,
   sidebarMode,
 }: {
-  renderSidebar: (onNavigate: () => void, searchLeading?: ReactNode) => ReactNode;
+  renderSidebar: (
+    onNavigate: () => void,
+    searchLeading?: ReactNode,
+  ) => ReactNode;
   search: string;
   isLoading: boolean;
   children: ReactNode;
@@ -50,7 +53,9 @@ export function SessionViewLayout({
           variant="ghost"
           size="icon"
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          aria-label={isSidebarOpen ? "Hide session sidebar" : "Show session sidebar"}
+          aria-label={
+            isSidebarOpen ? "Hide session sidebar" : "Show session sidebar"
+          }
           aria-expanded={isSidebarOpen}
           className="h-6 w-6 shrink-0"
         >
@@ -106,8 +111,15 @@ export function SessionViewLayout({
                     {sidebarToggle}
                   </div>
                 )}
-                <div className={showSidebar && isSidebarOpen ? "min-h-0 flex-1" : "hidden"}>
-                  {renderSidebar(() => {}, isSidebarOpen ? sidebarToggle : undefined)}
+                <div
+                  className={
+                    showSidebar && isSidebarOpen ? "min-h-0 flex-1" : "hidden"
+                  }
+                >
+                  {renderSidebar(
+                    () => {},
+                    isSidebarOpen ? sidebarToggle : undefined,
+                  )}
                 </div>
               </div>
             }
@@ -125,30 +137,30 @@ export function SessionViewLayout({
           />
         </div>
       ) : (
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="min-h-0 min-w-0 flex-1"
-        defaultLayout={showSidebar ? defaultLayout : undefined}
-        onLayoutChanged={showSidebar ? onLayoutChanged : undefined}
-      >
-        {showSidebar && (
-          <ResizablePanel
-            id="sidebar"
-            defaultSize="24%"
-            minSize="200px"
-            maxSize="50%"
-            className="h-full min-h-0"
-          >
-            {renderSidebar(() => {})}
+        <ResizablePanelGroup
+          orientation="horizontal"
+          className="min-h-0 min-w-0 flex-1"
+          defaultLayout={showSidebar ? defaultLayout : undefined}
+          onLayoutChanged={showSidebar ? onLayoutChanged : undefined}
+        >
+          {showSidebar && (
+            <ResizablePanel
+              id="sidebar"
+              defaultSize="24%"
+              minSize="200px"
+              maxSize="50%"
+              className="h-full min-h-0"
+            >
+              {renderSidebar(() => {})}
+            </ResizablePanel>
+          )}
+          {showSidebar && (
+            <ResizableHandle withHandle aria-label="Resize session sidebar" />
+          )}
+          <ResizablePanel id="timeline" minSize={showSidebar ? "300px" : "0%"}>
+            {children}
           </ResizablePanel>
-        )}
-        {showSidebar && (
-          <ResizableHandle withHandle aria-label="Resize session sidebar" />
-        )}
-        <ResizablePanel id="timeline" minSize={showSidebar ? "300px" : "0%"}>
-          {children}
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
       )}
     </div>
   );
