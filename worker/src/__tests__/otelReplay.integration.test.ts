@@ -1,7 +1,8 @@
 import "./helpers/otelReplaySetup";
 
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { Decimal } from "decimal.js";
+import fc from "fast-check";
 import {
   afterAll,
   afterEach,
@@ -63,6 +64,32 @@ const TRACE_ID = "11111111111111111111111111111111";
 const SECOND_TRACE_ID = "44444444444444444444444444444444";
 const FIRST_SPAN_ID = "2222222222222222";
 const SECOND_SPAN_ID = "3333333333333333";
+// Shared pricing validation accepts these patterns. Native unit tests cover the
+// deliberate fallback for usage keys containing UTF-16 surrogate pairs.
+const PRICING_REGEX_CASES = [
+  { pattern: "^\\w+$", key: "é", caseSensitive: true },
+  { pattern: "^\\d+$", key: "١", caseSensitive: true },
+  { pattern: "^\\s$", key: "\u0085", caseSensitive: true },
+  { pattern: "^\\bé\\b$", key: "é", caseSensitive: false },
+  { pattern: "^k$", key: "K", caseSensitive: false },
+  { pattern: "^s$", key: "ſ", caseSensitive: false },
+  { pattern: "^[a-z]+$", key: "K", caseSensitive: false },
+  {
+    pattern: "^(?=preinput$)preinput$",
+    key: "preinput",
+    caseSensitive: true,
+  },
+  { pattern: "^(?!output$)preinput$", key: "preinput", caseSensitive: true },
+  { pattern: "^(input)\\1$", key: "inputinput", caseSensitive: true },
+  { pattern: "^\\cA$", key: "\u0001", caseSensitive: true },
+  { pattern: "^\\k$", key: "k", caseSensitive: true },
+] as const;
+const PRICED_USAGE_TYPES = ["input", "output", "cache_read"] as const;
+const TINY_PRICES = [
+  "0.000000000001",
+  "0.000000000003",
+  "0.000000001234",
+] as const;
 
 beforeAll(async () => {
   await initializeEventByteAccounting();
@@ -648,6 +675,481 @@ describe(
       // The test owns this mutable mock setup; restore its deterministic
       // defaults so another worker suite in the same process is unaffected.
       configureDefaultOtelReplayMocks();
+    });
+
+    it("matches pricing boundaries, tier ordering and supplied-cost precedence", async () => {
+      const seed = randomInt(2 ** 31);
+      process.stderr.write(`OTEL pricing replay seed=${seed}\n`);
+      const pricingCase = fc.record({
+        threshold: fc.integer({ min: 1, max: 100 }),
+        delta: fc.constantFrom(-1, 0, 1),
+        operator: fc.constantFrom("lt", "lte", "eq", "neq", "gte", "gt"),
+        source: fc.constantFrom("metadata", "model_parameters"),
+        region: fc.constantFrom("eu", "us"),
+        provider: fc.option(
+          fc.constantFrom("openai", "googleVertex", "vertex", "google"),
+          { nil: undefined },
+        ),
+        responseTier: fc.constantFrom("flex", "ON_DEMAND_FLEX", "priority"),
+        explicitTier: fc.option(fc.constantFrom("flex", "priority"), {
+          nil: undefined,
+        }),
+        explicitParameterShape: fc.oneof(
+          { weight: 3, arbitrary: fc.constant("object") },
+          {
+            weight: 1,
+            arbitrary: fc.constantFrom(
+              "null",
+              "false",
+              "zero",
+              "emptyString",
+              "string",
+              "array",
+              "encodedObject",
+              "doubleEncodedObject",
+            ),
+          },
+        ),
+        googleTierField: fc.constantFrom("serviceTier", "trafficType"),
+        regexCase: fc.constantFrom(...PRICING_REGEX_CASES),
+        usageShape: fc.constantFrom("raw", "completion", "response"),
+        usageOrder: fc.shuffledSubarray([0, 1, 2, 3], {
+          minLength: 4,
+          maxLength: 4,
+        }),
+        priceOrder: fc.shuffledSubarray([...PRICED_USAGE_TYPES], {
+          minLength: 3,
+          maxLength: 3,
+        }),
+        tinyPrices: fc.shuffledSubarray([...TINY_PRICES], {
+          minLength: 3,
+          maxLength: 3,
+        }),
+        output: fc.integer({ min: 0, max: 10 }),
+        cacheRead: fc.integer({ min: 0, max: 10 }),
+        order: fc.shuffledSubarray([0, 1, 2], {
+          minLength: 3,
+          maxLength: 3,
+        }),
+        costs: fc.option(
+          fc.record({
+            input: fc.integer({ min: 0, max: 10 }),
+            output: fc.integer({ min: 0, max: 10 }),
+          }),
+          { nil: undefined },
+        ),
+      });
+      const example = fc.sample(pricingCase, { seed: 1, numRuns: 1 })[0]!;
+      await fc.assert(
+        fc.asyncProperty(
+          pricingCase,
+          async ({
+            threshold,
+            delta,
+            operator,
+            source,
+            region,
+            provider,
+            responseTier,
+            explicitTier,
+            explicitParameterShape,
+            googleTierField,
+            regexCase,
+            usageShape,
+            usageOrder,
+            priceOrder,
+            tinyPrices,
+            output,
+            cacheRead,
+            order,
+            costs,
+          }) => {
+            const input = threshold + delta;
+            const usageKeys = ["input", "output", "cache_read", regexCase.key];
+            const usageValues = [input, output, cacheRead, 1];
+            const usageDetails = Object.fromEntries(
+              usageOrder.map((index) => [usageKeys[index], usageValues[index]]),
+            );
+            const totalUsage = Object.values(usageDetails).reduce(
+              (sum, value) => sum + value,
+              0,
+            );
+            const normalizedUsage = { ...usageDetails, total: totalUsage };
+            const submittedUsage =
+              usageShape === "raw"
+                ? usageDetails
+                : {
+                    ...usageDetails,
+                    [usageShape === "completion"
+                      ? "prompt_tokens"
+                      : "input_tokens"]: input,
+                    [usageShape === "completion"
+                      ? "completion_tokens"
+                      : "output_tokens"]: output,
+                    total_tokens: totalUsage,
+                  };
+            const parameterObject = {
+              region: region === "eu" ? "us" : "eu",
+              service_tier: provider ? explicitTier : undefined,
+            };
+            const modelParameters = JSON.stringify(
+              {
+                object: parameterObject,
+                null: null,
+                false: false,
+                zero: 0,
+                emptyString: "",
+                string: "model-parameters",
+                array: [1, 2],
+                encodedObject: JSON.stringify(parameterObject),
+                doubleEncodedObject: JSON.stringify(
+                  JSON.stringify(parameterObject),
+                ),
+              }[explicitParameterShape],
+            );
+            const regex = new RegExp(
+              regexCase.pattern,
+              regexCase.caseSensitive ? "" : "i",
+            );
+            const regexTotal = Object.entries(normalizedUsage)
+              .filter(([key]) => regex.test(key))
+              .reduce((sum, [, value]) => sum + value, 0);
+            const usageCondition = {
+              usageDetailPattern: "^input$",
+              operator,
+              value: threshold,
+            };
+            const regexCondition = {
+              usageDetailPattern: regexCase.pattern,
+              operator: "eq" as const,
+              value: regexTotal,
+              caseSensitive: regexCase.caseSensitive,
+            };
+            const tiers = [
+              {
+                id: "conditional",
+                priority: 1,
+                conditions: [
+                  usageCondition,
+                  regexCondition,
+                  provider
+                    ? {
+                        source: "model_parameters",
+                        key: "service_tier",
+                        values: ["flex", "ON_DEMAND_FLEX"],
+                      }
+                    : { source, key: "region", values: ["eu"] },
+                ],
+                isDefault: false,
+              },
+              {
+                id: "usage",
+                priority: 2,
+                conditions: [usageCondition],
+                isDefault: false,
+              },
+              { id: "default", priority: 0, conditions: [], isDefault: true },
+            ].map((tier, index) => ({
+              ...tier,
+              name: tier.id,
+              prices: priceOrder.map((usageType, priceIndex) => ({
+                usageType,
+                price: new Decimal(tinyPrices[priceIndex]).mul(index + 1),
+              })),
+            }));
+            otelReplayMocks.findModel.mockResolvedValue({
+              model: { id: "priced-model" },
+              pricingTiers: order.map((index) => tiers[index]),
+            });
+            const comparison = await runOtelReplayComparison({
+              bytes: focusedReplayBytes({
+                scopeName: provider ? "ai" : undefined,
+                attributes: [
+                  stringAttribute("langfuse.observation.type", "generation"),
+                  stringAttribute(
+                    "langfuse.observation.model.name",
+                    "priced-model",
+                  ),
+                  stringAttribute(
+                    "langfuse.observation.usage_details",
+                    JSON.stringify(submittedUsage),
+                  ),
+                  stringAttribute(
+                    "langfuse.observation.metadata",
+                    JSON.stringify({ region }),
+                  ),
+                  stringAttribute(
+                    "langfuse.observation.model.parameters",
+                    modelParameters,
+                  ),
+                  ...(provider
+                    ? [
+                        stringAttribute(
+                          "gen_ai.request.service_tier",
+                          "standard",
+                        ),
+                        stringAttribute(
+                          "ai.response.providerMetadata",
+                          JSON.stringify({
+                            [provider]:
+                              provider === "openai" ||
+                              googleTierField === "serviceTier"
+                                ? { serviceTier: responseTier }
+                                : {
+                                    usageMetadata: {
+                                      trafficType: responseTier,
+                                    },
+                                  },
+                          }),
+                        ),
+                      ]
+                    : []),
+                  ...(costs === undefined
+                    ? []
+                    : [
+                        stringAttribute(
+                          "langfuse.observation.cost_details",
+                          JSON.stringify(costs),
+                        ),
+                      ]),
+                ],
+              }),
+              projectId: PROJECT_ID,
+              fileKey: FILE_KEY,
+              mediaUploadEnabled: true,
+            });
+            expectRawNativeParity(comparison);
+            expect(comparison.earlyRust.storedRows).toHaveLength(1);
+            const matchesUsage = {
+              lt: [-1],
+              lte: [-1, 0],
+              eq: [0],
+              neq: [-1, 1],
+              gte: [0, 1],
+              gt: [1],
+            }[operator].includes(delta);
+            const hasExplicitObjectParameters =
+              explicitParameterShape === "object" ||
+              (!provider &&
+                ["encodedObject", "doubleEncodedObject"].includes(
+                  explicitParameterShape,
+                ));
+            const matchesAttribute = provider
+              ? ["flex", "ON_DEMAND_FLEX"].includes(
+                  (hasExplicitObjectParameters ? explicitTier : undefined) ??
+                    responseTier,
+                )
+              : source === "metadata"
+                ? region === "eu"
+                : hasExplicitObjectParameters && region !== "eu";
+            const tierIndex = !matchesUsage ? 2 : matchesAttribute ? 0 : 1;
+            if (provider) {
+              expect(
+                JSON.parse(
+                  String(comparison.earlyRust.storedRows[0].model_parameters),
+                ),
+              ).toMatchObject({
+                service_tier:
+                  (hasExplicitObjectParameters ? explicitTier : undefined) ??
+                  responseTier,
+              });
+            }
+            const selectedPrices = new Map<string, Decimal>(
+              tiers[tierIndex].prices.map((price) => [
+                price.usageType,
+                price.price,
+              ]),
+            );
+            const calculatedCosts = Object.fromEntries(
+              Object.entries(usageDetails)
+                .filter(([key]) => selectedPrices.has(key))
+                .map(([key, value]) => [
+                  key,
+                  new Decimal(value).mul(selectedPrices.get(key)!).toNumber(),
+                ]),
+            );
+            const calculatedCost = Object.values(calculatedCosts).reduce(
+              (sum, value) => sum + value,
+              0,
+            );
+            expect(comparison.earlyRust.storedRows[0]).toMatchObject({
+              model_id: "priced-model",
+              usage_details: { ...usageDetails, total: totalUsage },
+              usage_pricing_tier_id: tiers[tierIndex].id,
+              cost_details:
+                costs === undefined
+                  ? Object.fromEntries(
+                      Object.entries({
+                        ...calculatedCosts,
+                        total: calculatedCost,
+                      }).map(([key, value]) => [
+                        key,
+                        new Decimal(value)
+                          .toDecimalPlaces(12, Decimal.ROUND_DOWN)
+                          .toNumber(),
+                      ]),
+                    )
+                  : { ...costs, total: costs.input + costs.output },
+            });
+          },
+        ),
+        {
+          seed,
+          numRuns: 64,
+          examples: [
+            "null",
+            "false",
+            "zero",
+            "emptyString",
+            "string",
+            "array",
+            "encodedObject",
+            "doubleEncodedObject",
+          ].flatMap((explicitParameterShape) =>
+            [undefined, "google"].map((provider) => [
+              {
+                ...example,
+                provider,
+                explicitParameterShape,
+                source: "model_parameters",
+                region: "us",
+                operator: "gte",
+                delta: 1,
+                costs: undefined,
+              },
+            ]),
+          ),
+        },
+      );
+    });
+
+    it("keeps partial provider usage aligned with TypeScript", async () => {
+      const seed = randomInt(2 ** 31);
+      process.stderr.write(`OTEL usage parity replay seed=${seed}\n`);
+      const count = fc.oneof(
+        fc.constant(undefined),
+        fc.constant(0),
+        fc.integer({ min: -100, max: 100 }),
+      );
+      const usageCase = fc.record({
+        kind: fc.constantFrom("genkit" as const, "ai"),
+        input: count,
+        output: count,
+        total: count,
+        thoughts: count,
+        provider: fc.constantFrom("none" as const, "anthropic", "mixed"),
+        breakdown: fc.boolean(),
+        aggregate: count,
+        fiveMinute: count,
+        oneHour: count,
+        bedrock: count,
+      });
+      const example = {
+        input: undefined,
+        output: undefined,
+        total: 7,
+        thoughts: undefined,
+        provider: "none" as const,
+        breakdown: true,
+        aggregate: undefined,
+        fiveMinute: undefined,
+        oneHour: undefined,
+        bedrock: undefined,
+      };
+      await fc.assert(
+        fc.asyncProperty(usageCase, async (fixture) => {
+          const attributes = [
+            stringAttribute("langfuse.observation.type", "generation"),
+          ];
+          if (fixture.kind === "genkit") {
+            attributes.push(
+              stringAttribute(
+                "genkit:output",
+                JSON.stringify({
+                  usage: {
+                    inputTokens: fixture.input,
+                    outputTokens: fixture.output,
+                    totalTokens: fixture.total,
+                    thoughtsTokens: fixture.thoughts,
+                  },
+                }),
+              ),
+            );
+          } else {
+            for (const [key, value] of [
+              ["gen_ai.usage.input_tokens", fixture.input],
+              ["gen_ai.usage.output_tokens", fixture.output],
+              ["ai.usage.tokens", fixture.total],
+            ] as const) {
+              if (value !== undefined) attributes.push(stringAttribute(key, String(value)));
+            }
+            if (fixture.provider !== "none") {
+              attributes.push(
+                stringAttribute(
+                  "ai.response.providerMetadata",
+                  JSON.stringify({
+                    anthropic: {
+                      usage: {
+                        cache_creation: fixture.breakdown
+                          ? {
+                              ephemeral_5m_input_tokens: fixture.fiveMinute,
+                              ephemeral_1h_input_tokens: fixture.oneHour,
+                            }
+                          : undefined,
+                        cache_creation_input_tokens: fixture.aggregate,
+                      },
+                    },
+                    ...(fixture.provider === "mixed"
+                      ? {
+                          bedrock: {
+                            usage: {
+                              cacheCreationInputTokens: fixture.bedrock,
+                            },
+                          },
+                        }
+                      : {}),
+                  }),
+                ),
+              );
+            }
+          }
+          const comparison = await runOtelReplayComparison({
+            bytes: focusedReplayBytes({
+              scopeName: fixture.kind === "genkit" ? "genkit-tracer" : "ai",
+              attributes,
+            }),
+            projectId: `${PROJECT_ID}-usage-parity`,
+            fileKey: `${FILE_KEY}.usage-parity`,
+          });
+          expectRawNativeParity(comparison);
+        }),
+        {
+          seed,
+          numRuns: 64,
+          examples: [
+            [
+              {
+                ...example,
+                kind: "ai",
+                input: 100,
+                output: 50,
+                total: 150,
+                provider: "mixed",
+                fiveMinute: 20,
+                oneHour: 5,
+                bedrock: 99,
+              },
+            ],
+            [
+              { ...example, kind: "genkit", output: 0, thoughts: 7 },
+            ],
+            ...[undefined, 0].map((thoughts) => [
+              { ...example, kind: "genkit", output: -1, thoughts },
+            ]),
+            [{ ...example, kind: "ai" }],
+          ],
+        },
+      );
     });
 
     it("dispatches batch evaluations together and writes each settled observation", async () => {
