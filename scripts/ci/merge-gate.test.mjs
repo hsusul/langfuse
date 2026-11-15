@@ -60,6 +60,12 @@ test("merge queue requires every gating suite, including provider tests", () => 
     evaluateGate({ event: "merge_group", needs: successfulJobs() }),
     [],
   );
+  const missingTypecheck = successfulJobs();
+  delete missingTypecheck.typecheck;
+  assert.match(
+    evaluateGate({ event: "merge_group", needs: missingTypecheck }).join("\n"),
+    /typecheck: expected success, received missing/,
+  );
   for (const name of requiredJobs) {
     for (const result of ["failure", "cancelled", "skipped", undefined]) {
       const needs = successfulJobs();
