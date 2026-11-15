@@ -763,11 +763,7 @@ export const env = createEnv({
       .int()
       .positive()
       .default(1_000_000),
-    LANGFUSE_SKILL_MAX_FILES: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(200),
+    LANGFUSE_SKILL_MAX_FILES: z.coerce.number().int().positive().default(200),
 
     // Reverse proxies in front of the web container that append the client
     // address to X-Forwarded-For. Audit events take the client IP from the
