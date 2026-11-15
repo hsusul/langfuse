@@ -301,13 +301,12 @@ jobs:
         run: |
           test -f "scripts/check.test.mjs"
           repo_regression_tests=(scripts/*.test.mjs)
+          pricing_regression_tests=(scripts/model-price-audit/*.test.mjs)
+          test -f "${pricing_regression_tests[0]}"
           node --test "${repo_regression_tests[@]}" \
             "scripts/ci/cargo-security.test.mjs" \
             "scripts/ci/code-scanning-alerts.test.mjs" \
-            "scripts/model-price-audit/audit-output-contract.test.mjs" \
-            "scripts/model-price-audit/discard-edits-without-model-changes.test.mjs" \
-            "scripts/model-price-audit/discard-formatting-only-pricing-diff.test.mjs" \
-            "scripts/model-price-audit/prepare-metadata.test.mjs" \
+            "${pricing_regression_tests[@]}" \
             ".agents/skills/add-model-price/scripts/validate-pricing-file.test.mjs"
       - name: shell regression tests
         run: |
