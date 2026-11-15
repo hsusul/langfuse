@@ -1,4 +1,6 @@
 ---
+runs-on: blacksmith-4vcpu-ubuntu-2404
+runs-on-slim: blacksmith-4vcpu-ubuntu-2404
 description: Twice-daily remediation of dependency and Code Scanning vulnerabilities, excluding license findings
 on:
   schedule:
@@ -248,6 +250,9 @@ steps:
         "$ALERTS_PATH" >> "$GITHUB_STEP_SUMMARY"
 
 safe-outputs:
+  runs-on: blacksmith-4vcpu-ubuntu-2404
+  threat-detection:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
   # Keep inline: GitHub forbids env here after compilation.
   staged: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode != 'live' }}
   report-failure-as-issue: false

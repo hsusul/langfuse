@@ -1,4 +1,6 @@
 ---
+runs-on: blacksmith-4vcpu-ubuntu-2404
+runs-on-slim: blacksmith-4vcpu-ubuntu-2404
 description: Weekly CI runtime analysis for pipeline.yml (merge-group focused) with trend memory
 on:
   schedule:
@@ -126,11 +128,16 @@ tools:
     max-file-count: 300
 
 safe-outputs:
+  runs-on: blacksmith-4vcpu-ubuntu-2404
+  timeout-minutes: 15
+  threat-detection:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
   # Fine-grained PAT (contents read, issues RW on this repo only) from the
   # github-agent-workflows environment. This workflow never opens or writes
   # to pull requests — every run's output is a single issue.
   github-token: ${{ secrets.GH_AW_CI_ANALYST_TOKEN }}
   create-issue:
+    expires: false
     title-prefix: "CI Runtime Report: "
     labels: [ci-performance]
     assignees: [wochinge]

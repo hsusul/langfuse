@@ -1,4 +1,6 @@
 ---
+runs-on: blacksmith-4vcpu-ubuntu-2404
+runs-on-slim: blacksmith-4vcpu-ubuntu-2404
 description: Weekly sync of the Bedrock model API formats with the AWS model cards
 on:
   schedule:
@@ -47,6 +49,9 @@ tools:
   edit:
 
 safe-outputs:
+  runs-on: blacksmith-4vcpu-ubuntu-2404
+  threat-detection:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
   create-pull-request:
     title-prefix: "chore(ai-gateway): "
     base-branch: main
@@ -59,6 +64,7 @@ safe-outputs:
     # Trigger CI with a maintainer token after the bot creates the PR.
     github-token-for-extra-empty-commit: ${{ secrets.GH_ACCESS_TOKEN }}
   create-issue:
+    expires: false
     title-prefix: "Bedrock model API formats: "
     assignees: [wochinge]
     max: 1
