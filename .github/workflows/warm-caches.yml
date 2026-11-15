@@ -2,8 +2,10 @@ name: Warm CI caches
 
 # Main-branch cache entries can be restored by other refs. Since the main
 # pipeline skips commits already tested by the merge queue, build these
-# profiles periodically so other branches can reuse their task artifacts.
+# profiles on main commits and periodically so other branches can reuse them.
 on:
+  push:
+    branches: [main]
   schedule:
     # Every 6 hours, offset from the top of the hour to dodge runner-pool
     # congestion. Frequency chosen to stay under the observed hours-scale
@@ -23,6 +25,7 @@ env:
 
 jobs:
   warm:
+    if: github.ref == 'refs/heads/main'
     # Match the pipeline's runner provider for cache compatibility.
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
