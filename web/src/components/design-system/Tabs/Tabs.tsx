@@ -8,6 +8,7 @@ import Link, { type LinkProps } from "next/link";
 import { flushSync } from "react-dom";
 
 import { DropdownIndicator } from "@/src/components/design-system/DropdownIndicator/DropdownIndicator";
+import { ControlledDropdownMenu } from "@/src/components/design-system/ControlledDropdownMenu/ControlledDropdownMenu";
 import { DropdownMenu } from "@/src/components/design-system/DropdownMenu/DropdownMenu";
 import { IconButton } from "@/src/components/design-system/IconButton/IconButton";
 import { SelectInput } from "@/src/components/design-system/SelectInput/SelectInput";
@@ -334,22 +335,25 @@ type TabsTriggerProps = {
         href?: never;
         active?: never;
         onClick?: never;
-        /**
-         * A tab that also opens a menu: shows a down indicator and announces
-         * the menu. The caller's menu owns the press handling.
-         */
-        menu?: { open: boolean };
+        /** The first press selects the tab; subsequent presses open its menu. */
+        menu?: Pick<
+          React.ComponentProps<typeof ControlledDropdownMenu>,
+          "ariaLabel" | "items"
+        >;
       }
     | {
         /** Renders a Next.js link with `aria-current` instead of a tab. */
         href: LinkProps["href"];
         active: boolean;
+        menu?: never;
         onClick?: () => void;
         value?: never;
       }
   );
 
 function TabsTrigger(props: TabsTriggerProps) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const pressedWhileActive = React.useRef(false);
   // Outside a Tabs.List, fall back to the underline look instead of crashing.
   const list = React.use(TabsListContext) ?? { look: "underline" as const };
   const { children, count, disabled, icon, internal, label, title, tooltip } =
@@ -387,17 +391,62 @@ function TabsTrigger(props: TabsTriggerProps) {
     );
   }
 
+  if (props.menu) {
+    return (
+      <ControlledDropdownMenu
+        {...props.menu}
+        open={menuOpen}
+        disabled={disabled}
+        onOpenChange={(next) => setMenuOpen(next && pressedWhileActive.current)}
+        placement="bottom-end"
+      >
+        {({ getTriggerProps }) => (
+          <span
+            {...getTriggerProps({
+              // Radix selects on mouse down, before the click opens the menu.
+              onPointerDown: (event) => {
+                pressedWhileActive.current =
+                  event.currentTarget
+                    .querySelector('[role="tab"]')
+                    ?.getAttribute("data-state") === "active";
+              },
+              onKeyDown: (event) => {
+                pressedWhileActive.current =
+                  event.currentTarget
+                    .querySelector('[role="tab"]')
+                    ?.getAttribute("data-state") === "active";
+              },
+            })}
+            // Keep the tab's id and aria-controls associated with its panel.
+            aria-haspopup={undefined}
+            aria-expanded={undefined}
+            aria-controls={undefined}
+          >
+            <TabsPrimitive.Trigger
+              value={props.value}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              disabled={disabled}
+              title={nativeTitle}
+              className={className}
+            >
+              {content}
+              <DropdownIndicator size="sm" nudge />
+            </TabsPrimitive.Trigger>
+          </span>
+        )}
+      </ControlledDropdownMenu>
+    );
+  }
+
   return (
     <TabsPrimitive.Trigger
       value={props.value}
-      aria-haspopup={props.menu ? "menu" : undefined}
-      aria-expanded={props.menu?.open}
       disabled={disabled}
       title={nativeTitle}
       className={className}
     >
       {content}
-      {props.menu ? <DropdownIndicator size="sm" nudge /> : null}
     </TabsPrimitive.Trigger>
   );
 }

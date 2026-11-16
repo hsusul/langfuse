@@ -10,6 +10,60 @@ const meta = preview.meta({
   component: Tabs,
 });
 
+export const TabWithMenu = meta.story({
+  name: "(Test) Tab With Menu",
+  render: () => (
+    <Tabs defaultValue="topics">
+      <Tabs.List variant="underline">
+        <Tabs.Trigger value="topics" label="Topics" />
+        <Tabs.Trigger
+          value="visualization"
+          label="Visualize"
+          menu={{
+            ariaLabel: "Visualize as",
+            items: [
+              {
+                type: "item",
+                id: "treemap",
+                title: "Treemap",
+                onClick: () => {},
+              },
+              { type: "item", id: "map", title: "Scatter", onClick: () => {} },
+            ],
+          }}
+        />
+      </Tabs.List>
+      <Tabs.Content value="topics">Topics panel</Tabs.Content>
+      <Tabs.Content value="visualization">Visualization panel</Tabs.Content>
+    </Tabs>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    const trigger = canvas.getByRole("tab", { name: "Visualize" });
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute("aria-selected", "true");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(body.queryByRole("menu")).not.toBeInTheDocument();
+    await userEvent.click(trigger);
+    await expect(
+      await body.findByRole("menu", { name: "Visualize as" }),
+    ).toBeVisible();
+    await userEvent.click(body.getByRole("menuitem", { name: "Scatter" }));
+    await waitFor(() =>
+      expect(body.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    await expect(trigger).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await expect(await body.findByRole("menu")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(body.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    await expect(trigger).toHaveFocus();
+  },
+});
+
 const defaultChildren = (
   <>
     <Tabs.List variant="inset" size="md">
