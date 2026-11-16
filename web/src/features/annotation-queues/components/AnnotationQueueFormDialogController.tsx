@@ -199,7 +199,7 @@ function prepareQueueFormValues(
       name: "",
       scoreConfigIds: [],
       newAssignmentUserIds: [],
-      sessionViewConfig: null,
+      sessionViewId: null,
     };
   }
   if (!queue) return undefined;
@@ -208,7 +208,7 @@ function prepareQueueFormValues(
     description: queue.description || undefined,
     scoreConfigIds: queue.scoreConfigs.map((config) => config.id),
     newAssignmentUserIds: [],
-    sessionViewConfig: queue.sessionViewConfig ?? null,
+    sessionViewId: queue.sessionViewId ?? null,
   };
 }
 
@@ -242,7 +242,7 @@ async function saveQueueWithAssignments({
     description: data.description,
     scoreConfigIds: data.scoreConfigIds,
     projectId,
-    sessionViewConfig: data.sessionViewConfig ?? null,
+    sessionViewId: data.sessionViewId ?? null,
   };
   let targetQueueId = existingQueueId;
   if (targetQueueId) {

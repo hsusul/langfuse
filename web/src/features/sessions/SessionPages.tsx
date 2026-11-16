@@ -758,7 +758,9 @@ const LoadedSessionEventsPage: React.FC<{
     projectId,
     scope: "TableViewPresets:CUD",
   });
-  const updateSessionView = api.sessionViews.update.useMutation();
+  const updateSessionView = api.sessionViews.update.useMutation({
+    onSuccess: () => viewUtils.annotationQueues.invalidate(),
+  });
   const deleteSessionView = api.sessionViews.delete.useMutation();
   const duplicateSessionView = api.sessionViews.create.useMutation();
   const createSessionView = api.sessionViews.create.useMutation({

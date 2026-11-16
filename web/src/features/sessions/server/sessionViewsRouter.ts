@@ -193,8 +193,27 @@ export const sessionViewsRouter = createTRPCRouter({
             "Only the creator or a project administrator can delete this view.",
         });
       }
-      const result = await ctx.prisma.sessionView.deleteMany({
-        where: { ...input, createdBy: view.createdBy },
+      const result = await ctx.prisma.$transaction(async (tx) => {
+        // Queue inserts acquire a foreign-key key-share lock on this row.
+        await tx.$queryRaw`
+          SELECT id FROM session_views
+          WHERE project_id = ${input.projectId} AND id = ${input.id}
+          FOR UPDATE
+        `;
+        const queues = await tx.annotationQueue.findMany({
+          where: { projectId: input.projectId, sessionViewId: input.id },
+          select: { name: true },
+          orderBy: { name: "asc" },
+        });
+        if (queues.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `This session view is used by annotation queues: ${queues.map(({ name }) => name).join(", ")}. Choose another view for these queues before deleting it.`,
+          });
+        }
+        return tx.sessionView.deleteMany({
+          where: { ...input, createdBy: view.createdBy },
+        });
       });
       if (result.count === 0)
         throw new TRPCError({

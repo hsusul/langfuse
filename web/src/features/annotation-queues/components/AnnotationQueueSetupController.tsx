@@ -12,7 +12,7 @@ import {
 } from "./AnnotationQueueSetupForm";
 import { QueueScoreConfigFields } from "./QueueScoreConfigFields";
 import { UserAssignmentSection } from "./UserAssignmentSection";
-import { AnnotationQueueSessionViewSettings } from "./AnnotationQueueSessionViewSettings";
+import { ConnectedAnnotationQueueSessionViewSettings } from "./ConnectedAnnotationQueueSessionViewSettings";
 
 export function AnnotationQueueSetupController({
   projectId,
@@ -99,7 +99,7 @@ export function AnnotationQueueSetupController({
         description: queue.data.description ?? "",
         scoreConfigIds: queue.data.scoreConfigs.map((config) => config.id),
         newAssignmentUserIds: [],
-        sessionViewConfig: queue.data.sessionViewConfig ?? null,
+        sessionViewId: queue.data.sessionViewId ?? null,
       }}
       queueNames={(queues.data ?? [])
         .filter((candidate) => candidate.id !== queueId)
@@ -109,7 +109,7 @@ export function AnnotationQueueSetupController({
       hasAssignments={hasAssignments}
       renderLayout={renderLayout}
       renderSessionViewSettings={({ value, onChange, disabled }) => (
-        <AnnotationQueueSessionViewSettings
+        <ConnectedAnnotationQueueSessionViewSettings
           projectId={projectId}
           value={value ?? null}
           onChange={onChange}
@@ -184,7 +184,7 @@ async function saveQueueSetup({
     dirty.name ||
     dirty.description ||
     dirty.scoreConfigIds ||
-    dirty.sessionViewConfig
+    dirty.sessionViewId
   ) {
     await updateQueue({
       projectId,
@@ -194,8 +194,8 @@ async function saveQueueSetup({
       ...(dirty.scoreConfigIds
         ? { scoreConfigIds: values.scoreConfigIds }
         : {}),
-      ...(dirty.sessionViewConfig
-        ? { sessionViewConfig: values.sessionViewConfig ?? null }
+      ...(dirty.sessionViewId
+        ? { sessionViewId: values.sessionViewId ?? null }
         : {}),
     });
   }

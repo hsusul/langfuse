@@ -40,9 +40,8 @@ export function SessionCustomizationDialog({
   projectId: string;
   variant:
     | { type: "customize" }
-    | { type: "configure" }
     | {
-        type: "edit";
+        type: "create" | "edit";
         initialName: string;
         pending: boolean;
         disabled: boolean;
@@ -62,7 +61,7 @@ export function SessionCustomizationDialog({
     "pending" | "error"
   > & { traces: RouterOutputs["sessions"]["previewTree"] | undefined };
 }) {
-  const editing = variant.type === "edit" ? variant : undefined;
+  const editing = variant.type !== "customize" ? variant : undefined;
   const formId = useId();
   const form = useForm({
     defaultValues: {
@@ -133,7 +132,7 @@ export function SessionCustomizationDialog({
       title={
         {
           edit: "Edit view",
-          configure: "Configure session view",
+          create: "New session view",
           customize: "Customize session view",
         }[variant.type]
       }
@@ -141,7 +140,7 @@ export function SessionCustomizationDialog({
         {
           label: {
             edit: "Save changes",
-            configure: "Use configuration",
+            create: "Create view",
             customize: "Apply changes",
           }[variant.type],
           type: "submit",

@@ -13,7 +13,7 @@ import { Form } from "@/src/components/design-system/Form/Form";
 import { Input } from "@/src/components/design-system/Input/Input";
 import { Textarea } from "@/src/components/ui/textarea";
 import { UserAssignmentSection } from "@/src/features/annotation-queues/components/UserAssignmentSection";
-import { AnnotationQueueSessionViewSettings } from "./AnnotationQueueSessionViewSettings";
+import { ConnectedAnnotationQueueSessionViewSettings } from "./ConnectedAnnotationQueueSessionViewSettings";
 
 type AnnotationQueueFormDialogContentProps = {
   mode: "create" | "edit";
@@ -152,9 +152,9 @@ export function AnnotationQueueFormDialogContent({
           )}
           <Controller
             control={form.control}
-            name="sessionViewConfig"
+            name="sessionViewId"
             render={({ field }) => (
-              <AnnotationQueueSessionViewSettings
+              <ConnectedAnnotationQueueSessionViewSettings
                 projectId={projectId}
                 value={field.value ?? null}
                 onChange={field.onChange}
@@ -163,16 +163,14 @@ export function AnnotationQueueFormDialogContent({
             )}
           />
           {hasQueueAssignmentsReadAccess ? (
-            <Form.Field
+            <Controller
               control={form.control}
               name="newAssignmentUserIds"
-              label="User assignments"
-            >
-              {(field) => (
+              render={({ field }) => (
                 <Accordion type="single" collapsible>
                   <Accordion.Item value="assignments">
                     <Accordion.Trigger size="sm">
-                      Manage assignments
+                      User assignments
                     </Accordion.Trigger>
                     <Accordion.Content>
                       <div className="py-3">
@@ -187,7 +185,7 @@ export function AnnotationQueueFormDialogContent({
                   </Accordion.Item>
                 </Accordion>
               )}
-            </Form.Field>
+            />
           ) : null}
         </Form>
       </Dialog.Body>
