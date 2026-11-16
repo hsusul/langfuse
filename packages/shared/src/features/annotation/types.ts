@@ -1,6 +1,7 @@
 import z from "zod";
 import { StringNoHTML, StringNoHTMLNonEmpty } from "../../utils/zod";
 import { CategoricalData, TextData, NumericData } from "../../domain/scores";
+import { SessionViewConfigSchema } from "../../domain/session-views";
 
 const ScoreTargetTrace = z.object({
   type: z.literal("trace"),
@@ -100,6 +101,7 @@ export const CreateQueueData = z.object({
   scoreConfigIds: z.array(z.string()).min(1, {
     message: "At least 1 score config must be selected",
   }),
+  sessionViewConfig: SessionViewConfigSchema.nullish(),
 });
 
 export const CreateQueueWithAssignmentsData = CreateQueueData.extend({

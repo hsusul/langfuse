@@ -195,7 +195,12 @@ function prepareQueueFormValues(
   queue: RouterOutputs["annotationQueues"]["byId"] | undefined,
 ): CreateQueueWithAssignments | undefined {
   if (mode === "create") {
-    return { name: "", scoreConfigIds: [], newAssignmentUserIds: [] };
+    return {
+      name: "",
+      scoreConfigIds: [],
+      newAssignmentUserIds: [],
+      sessionViewConfig: null,
+    };
   }
   if (!queue) return undefined;
   return {
@@ -203,6 +208,7 @@ function prepareQueueFormValues(
     description: queue.description || undefined,
     scoreConfigIds: queue.scoreConfigs.map((config) => config.id),
     newAssignmentUserIds: [],
+    sessionViewConfig: queue.sessionViewConfig ?? null,
   };
 }
 
@@ -236,6 +242,7 @@ async function saveQueueWithAssignments({
     description: data.description,
     scoreConfigIds: data.scoreConfigIds,
     projectId,
+    sessionViewConfig: data.sessionViewConfig ?? null,
   };
   let targetQueueId = existingQueueId;
   if (targetQueueId) {

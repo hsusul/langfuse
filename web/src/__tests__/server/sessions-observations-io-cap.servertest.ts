@@ -501,33 +501,69 @@ maybe("sessions observations bounded I/O (events)", () => {
     expect(last.metadata).toBe("{}");
   });
 
-  it("serves full I/O for one observation via observationFullIOFromEvents, scoped to the session", async () => {
+  it("serves full I/O to project members while keeping public downloads session-scoped", async () => {
     const bigInput = "c".repeat(INLINE_LIMIT + 100);
     const { sessionId, traceId, baseTime } = await seedObservations([
       { input: bigInput, output: "full output" },
+      { sessionId: "", input: bigInput, output: "output without a session ID" },
+      { sessionId: randomUUID(), output: "another session's output" },
     ]);
-
-    const full = await caller.sessions.observationFullIOFromEvents({
+    const memberCaller = appRouter.createCaller({
+      ...createInnerTRPCContext({
+        session: { ...session, user: { ...session.user, admin: false } },
+        headers: {},
+      }),
+      prisma,
+    });
+    const input = {
       projectId,
       sessionId,
       traceId,
-      observationId: `${traceId}-o0`,
-      startTime: new Date(baseTime),
+      observationId: `${traceId}-o1`,
+      startTime: new Date(baseTime + 100),
+    };
+    const full = await memberCaller.sessions.observationFullIOFromEvents(input);
+    expect(full.input).toBe(bigInput);
+    expect(full.output).toBe("output without a session ID");
+
+    await prisma.traceSession.create({
+      data: { id: sessionId, projectId, public: true },
+    });
+    const publicCaller = appRouter.createCaller({
+      ...createInnerTRPCContext({ session: null, headers: {} }),
+      prisma,
     });
 
-    expect(full.input).toBe(bigInput);
-    expect(full.output).toBe("full output");
+    try {
+      const publicFull =
+        await publicCaller.sessions.observationFullIOFromEvents({
+          ...input,
+          observationId: `${traceId}-o0`,
+          startTime: new Date(baseTime),
+        });
+      expect(publicFull.input).toBe(bigInput);
+      expect(publicFull.output).toBe("full output");
 
-    // A different session must not grant access to the same observation:
-    // the sessionId predicate is part of the authorization.
-    await expect(
-      caller.sessions.observationFullIOFromEvents({
-        projectId,
-        sessionId: randomUUID(),
-        traceId,
-        observationId: `${traceId}-o0`,
-        startTime: new Date(baseTime),
-      }),
-    ).rejects.toThrow("Observation not found in session");
+      await expect(
+        publicCaller.sessions.observationFullIOFromEvents(input),
+      ).rejects.toThrow("Observation not found in session");
+      await expect(
+        publicCaller.sessions.observationFullIOFromEvents({
+          ...input,
+          observationId: `${traceId}-o2`,
+          startTime: new Date(baseTime + 200),
+        }),
+      ).rejects.toThrow("Observation not found in session");
+      await expect(
+        memberCaller.sessions.observationFullIOFromEvents({
+          ...input,
+          projectId: randomUUID(),
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await prisma.traceSession.deleteMany({
+        where: { projectId, id: sessionId },
+      });
+    }
   });
 });

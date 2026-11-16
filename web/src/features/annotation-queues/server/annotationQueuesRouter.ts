@@ -8,6 +8,7 @@ import {
 import {
   AnnotationQueueObjectType,
   AnnotationQueueStatus,
+  type AnnotationQueue,
   CreateQueueData,
   filterAndValidateDbScoreConfigList,
   isBaseError,
@@ -15,6 +16,7 @@ import {
   LangfuseNotFoundError,
   optionalPaginationZod,
   Prisma,
+  SessionViewConfigSchema,
 } from "@langfuse/shared";
 import {
   getObservationById,
@@ -31,6 +33,25 @@ const QueueData = CreateQueueData.extend({
     { message: "Score config IDs must be unique" },
   ),
 });
+
+function withSessionViewConfig({
+  sessionViewFilters,
+  sessionViewMode,
+  sessionViewUnmatchedTraces,
+  ...queue
+}: AnnotationQueue) {
+  return {
+    ...queue,
+    sessionViewConfig:
+      sessionViewMode === null
+        ? null
+        : SessionViewConfigSchema.parse({
+            filters: sessionViewFilters,
+            viewMode: sessionViewMode,
+            unmatchedTraces: sessionViewUnmatchedTraces,
+          }),
+  };
+}
 
 export const queueRouter = createTRPCRouter({
   hasAny: protectedProjectProcedure
@@ -238,7 +259,9 @@ export const queueRouter = createTRPCRouter({
         );
 
         return {
-          ...queue,
+          ...(queue
+            ? withSessionViewConfig(queue)
+            : { sessionViewConfig: null }),
           scoreConfigs: Array.from(new Set(queue?.scoreConfigIds ?? []))
             .map((id) => scoreConfigsById.get(id))
             .filter(isPresent),
@@ -383,6 +406,11 @@ export const queueRouter = createTRPCRouter({
                 projectId: input.projectId,
                 description: input.description,
                 scoreConfigIds: input.scoreConfigIds,
+                sessionViewFilters:
+                  input.sessionViewConfig?.filters ?? Prisma.DbNull,
+                sessionViewMode: input.sessionViewConfig?.viewMode,
+                sessionViewUnmatchedTraces:
+                  input.sessionViewConfig?.unmatchedTraces,
               },
             });
           },
@@ -397,7 +425,7 @@ export const queueRouter = createTRPCRouter({
           after: queue,
         });
 
-        return queue;
+        return withSessionViewConfig(queue);
       } catch (error) {
         logger.error(error);
         if (error instanceof TRPCError) {
@@ -489,6 +517,15 @@ export const queueRouter = createTRPCRouter({
             name: input.name,
             description: input.description,
             scoreConfigIds: input.scoreConfigIds,
+            ...(input.sessionViewConfig !== undefined
+              ? {
+                  sessionViewFilters:
+                    input.sessionViewConfig?.filters ?? Prisma.DbNull,
+                  sessionViewMode: input.sessionViewConfig?.viewMode ?? null,
+                  sessionViewUnmatchedTraces:
+                    input.sessionViewConfig?.unmatchedTraces ?? null,
+                }
+              : {}),
           },
         });
 
@@ -501,7 +538,7 @@ export const queueRouter = createTRPCRouter({
           after: updatedQueue,
         });
 
-        return updatedQueue;
+        return withSessionViewConfig(updatedQueue);
       } catch (error) {
         if (error instanceof TRPCError || isBaseError(error)) {
           throw error;
@@ -545,7 +582,7 @@ export const queueRouter = createTRPCRouter({
           before: queue,
         });
 
-        return queue;
+        return withSessionViewConfig(queue);
       } catch (error) {
         if (error instanceof TRPCError || isBaseError(error)) {
           throw error;

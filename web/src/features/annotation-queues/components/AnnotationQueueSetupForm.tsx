@@ -41,6 +41,11 @@ type AnnotationQueueSetupFormProps = {
   children: (control: SelectionControl) => ReactNode;
   renderAssignments: (control: SelectionControl) => ReactNode;
   renderLayout: (content: ReactNode) => ReactNode;
+  renderSessionViewSettings?: (control: {
+    value: AnnotationQueueSetupValues["sessionViewConfig"];
+    onChange: (value: AnnotationQueueSetupValues["sessionViewConfig"]) => void;
+    disabled: boolean;
+  }) => ReactNode;
 };
 
 function sameIds(
@@ -63,6 +68,7 @@ export function AnnotationQueueSetupForm({
   children,
   renderAssignments,
   renderLayout,
+  renderSessionViewSettings,
 }: AnnotationQueueSetupFormProps) {
   const formId = useId();
   const [saveFailed, setSaveFailed] = useState(false);
@@ -127,6 +133,9 @@ export function AnnotationQueueSetupForm({
         values.newAssignmentUserIds,
         defaults?.newAssignmentUserIds ?? [],
       ),
+      sessionViewConfig:
+        JSON.stringify(values.sessionViewConfig ?? null) !==
+        JSON.stringify(defaults?.sessionViewConfig ?? null),
     };
     try {
       await onSubmit(values, dirtyFields);
@@ -222,6 +231,21 @@ export function AnnotationQueueSetupForm({
                       )}
                     />
                   </section>
+                )}
+                {renderSessionViewSettings && (
+                  <Controller
+                    control={form.control}
+                    name="sessionViewConfig"
+                    render={({ field }) => (
+                      <>
+                        {renderSessionViewSettings({
+                          value: field.value,
+                          onChange: field.onChange,
+                          disabled,
+                        })}
+                      </>
+                    )}
+                  />
                 )}
               </div>
             </Tabs.Content>

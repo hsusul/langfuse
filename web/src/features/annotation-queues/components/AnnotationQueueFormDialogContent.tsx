@@ -1,6 +1,6 @@
 import { type ReactNode, useId } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import {
   CreateQueueWithAssignmentsData,
@@ -13,6 +13,7 @@ import { Form } from "@/src/components/design-system/Form/Form";
 import { Input } from "@/src/components/design-system/Input/Input";
 import { Textarea } from "@/src/components/ui/textarea";
 import { UserAssignmentSection } from "@/src/features/annotation-queues/components/UserAssignmentSection";
+import { AnnotationQueueSessionViewSettings } from "./AnnotationQueueSessionViewSettings";
 
 type AnnotationQueueFormDialogContentProps = {
   mode: "create" | "edit";
@@ -149,17 +150,29 @@ export function AnnotationQueueFormDialogContent({
               )}
             </Form.Field>
           )}
+          <Controller
+            control={form.control}
+            name="sessionViewConfig"
+            render={({ field }) => (
+              <AnnotationQueueSessionViewSettings
+                projectId={projectId}
+                value={field.value ?? null}
+                onChange={field.onChange}
+                disabled={isSubmitting}
+              />
+            )}
+          />
           {hasQueueAssignmentsReadAccess ? (
             <Form.Field
               control={form.control}
               name="newAssignmentUserIds"
-              label="Advanced Settings"
+              label="User assignments"
             >
               {(field) => (
                 <Accordion type="single" collapsible>
                   <Accordion.Item value="assignments">
                     <Accordion.Trigger size="sm">
-                      User Assignment
+                      Manage assignments
                     </Accordion.Trigger>
                     <Accordion.Content>
                       <div className="py-3">

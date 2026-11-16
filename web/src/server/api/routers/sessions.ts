@@ -1232,11 +1232,9 @@ export const sessionRouter = createTRPCRouter({
     },
   ),
   /**
-   * Full raw I/O for one observation, for the session card's download
-   * fallback (LFE-10958). Session-authorized (public sessions included); the
-   * repository query scopes by sessionId so a session grant cannot read
-   * observations outside that session. Returns raw strings — the client
-   * saves them to a file and never renders them.
+   * Full raw I/O for one observation, for the session card's download fallback.
+   * Public-session access is session-scoped; project members can read the
+   * entire trace. Returns raw strings for the client to save to a file.
    */
   observationFullIOFromEvents: auditedQuery(
     protectedGetSessionProcedure.input(
@@ -1249,10 +1247,10 @@ export const sessionRouter = createTRPCRouter({
       }),
     ),
     { resourceType: "observation", action: "read", idKey: "observationId" },
-    async ({ input, audit }) => {
+    async ({ input, ctx, audit }) => {
       const observation = await getObservationFullIOForSessionFromEventsTable({
         projectId: input.projectId,
-        sessionId: input.sessionId,
+        sessionId: ctx.session.projectRole ? undefined : input.sessionId,
         traceId: input.traceId,
         observationId: input.observationId,
         startTime: input.startTime,

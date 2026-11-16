@@ -315,12 +315,19 @@ describe("annotation queues trpc", () => {
       );
       const first = await createScoreConfig(setup.project.id);
       const second = await createScoreConfig(setup.project.id);
+      const sessionViewConfig = {
+        filters: [],
+        viewMode: "list" as const,
+        unmatchedTraces: "hide" as const,
+      };
       const queue = await caller.annotationQueues.create({
         projectId: setup.project.id,
         name: "configured-queue",
         description: "Initial description",
         scoreConfigIds: [first.id, second.id],
+        sessionViewConfig,
       });
+      expect(queue.sessionViewConfig).toEqual(sessionViewConfig);
       await caller.annotationQueues.create({
         projectId: setup.project.id,
         name: "another-queue",
@@ -335,6 +342,7 @@ describe("annotation queues trpc", () => {
         projectId: setup.project.id,
         queueId: queue.id,
         scoreConfigIds: [second.id, first.id],
+        sessionViewConfig,
       });
       expect(configured).toMatchObject({
         name: "Latest name",
@@ -352,6 +360,35 @@ describe("annotation queues trpc", () => {
         name: "Changed settings",
         description: "Changed description",
         scoreConfigIds: [second.id, first.id],
+        sessionViewConfig,
+      });
+      const saved = await caller.annotationQueues.byId({
+        projectId: setup.project.id,
+        queueId: queue.id,
+      });
+      expect(saved.sessionViewConfig).toEqual(sessionViewConfig);
+      const storedConfig = await prisma.annotationQueue.findUniqueOrThrow({
+        where: { id: queue.id, projectId: setup.project.id },
+      });
+      expect(storedConfig).toMatchObject({
+        sessionViewFilters: sessionViewConfig.filters,
+        sessionViewMode: sessionViewConfig.viewMode,
+        sessionViewUnmatchedTraces: sessionViewConfig.unmatchedTraces,
+      });
+
+      const reset = await caller.annotationQueues.update({
+        projectId: setup.project.id,
+        queueId: queue.id,
+        sessionViewConfig: null,
+      });
+      expect(reset.sessionViewConfig).toBeNull();
+      const stored = await prisma.annotationQueue.findUniqueOrThrow({
+        where: { id: queue.id, projectId: setup.project.id },
+      });
+      expect(stored).toMatchObject({
+        sessionViewFilters: null,
+        sessionViewMode: null,
+        sessionViewUnmatchedTraces: null,
       });
     });
 

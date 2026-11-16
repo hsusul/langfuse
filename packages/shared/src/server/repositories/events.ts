@@ -3650,15 +3650,13 @@ export const streamObservationIOFieldFromEventsTable = (
 };
 
 /**
- * Full raw I/O + metadata for ONE observation, scoped to a session (the
- * session-detail download fallback for payloads too large to render inline,
- * LFE-10958). Callers are session-authorized (public sessions included), so
- * the session_id predicate is part of the authorization: the query itself
- * guarantees the observation belongs to that session — never widen it.
+ * Full raw I/O + metadata for one observation in a session-detail download.
+ * Public-session callers must supply sessionId to scope their access.
+ * Only project-authorized callers may pass undefined.
  */
 export const getObservationFullIOForSessionFromEventsTable = async (opts: {
   projectId: string;
-  sessionId: string;
+  sessionId: string | undefined;
   traceId: string;
   observationId: string;
   /** The observation's startTime; bounds the read for primary-key pruning. */
@@ -3675,7 +3673,7 @@ export const getObservationFullIOForSessionFromEventsTable = async (opts: {
   const maxTimestamp = new Date(opts.startTime.getTime() + 1000);
 
   const db = getClickhouseKysely();
-  const builder = db
+  let builder = db
     .selectFrom("events as e")
     .select((eb) => [
       "e.span_id as id",
@@ -3684,8 +3682,11 @@ export const getObservationFullIOForSessionFromEventsTable = async (opts: {
       metadataMap(eb.ref("e.metadata_names"), eb.ref("e.metadata_values")).as(
         "metadata",
       ),
-    ])
-    .where("e.session_id", "=", opts.sessionId)
+    ]);
+  if (opts.sessionId !== undefined) {
+    builder = builder.where("e.session_id", "=", opts.sessionId);
+  }
+  const observationQuery = builder
     .where((eb) =>
       eb(xxHash32(eb.ref("e.trace_id")), "=", xxHash32(eb.val(opts.traceId))),
     )
@@ -3696,7 +3697,7 @@ export const getObservationFullIOForSessionFromEventsTable = async (opts: {
     .orderBy("e.event_ts", "desc")
     .limit(literal(1));
   const { sql: query, params } = compileClickhouseQuery(
-    builder,
+    observationQuery,
     opts.projectId,
   );
 

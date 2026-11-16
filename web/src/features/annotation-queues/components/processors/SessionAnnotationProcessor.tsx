@@ -1,6 +1,7 @@
 import {
   type AnnotationQueueItem,
   type ScoreConfigDomain,
+  type SessionViewConfig,
 } from "@langfuse/shared";
 import type { AnnotationCommentFlush } from "@/src/features/scores/types";
 import { AnnotationDrawerSection } from "../shared/AnnotationDrawerSection";
@@ -31,6 +32,9 @@ import useLocalStorage from "@/src/components/useLocalStorage";
 import { DialogController } from "@/src/components/design-system/DialogController/DialogController";
 import { type EventSessionTrace } from "@/src/features/sessions/sessionDetailPageTypes";
 import { ConnectedSessionOutputCorrectionsDialog } from "./components/ConnectedSessionOutputCorrectionsDialog/ConnectedSessionOutputCorrectionsDialog";
+import { ConnectedSessionListBody } from "@/src/features/sessions/ConnectedSessionListBody";
+import { SessionDetailStoreProvider } from "@/src/features/sessions/SessionDetailStoreProvider";
+import { createSessionDetailStore } from "@/src/features/sessions/sessionDetailStore";
 
 type SessionAnnotationQueueItem = AnnotationQueueItem & {
   parentTraceId?: string | null;
@@ -43,6 +47,7 @@ interface SessionAnnotationProcessorProps {
   configs: ScoreConfigDomain[];
   projectId: string;
   commentFlushRef?: React.Ref<AnnotationCommentFlush>;
+  sessionViewConfig?: SessionViewConfig | null;
 }
 
 // some projects have thousands of traces in a session, paginate to avoid rendering all at once
@@ -53,7 +58,20 @@ const EMPTY_FILTER_STATE: [] = [];
 
 export const SessionAnnotationProcessor: React.FC<
   SessionAnnotationProcessorProps
-> = ({ item, data, configs, projectId, commentFlushRef }) => {
+> = ({
+  item,
+  data,
+  configs,
+  projectId,
+  commentFlushRef,
+  sessionViewConfig,
+}) => {
+  const [sessionDetailStore] = useState(() =>
+    createSessionDetailStore({
+      initialSessionId: item.objectId,
+      initialShowCorrections: true,
+    }),
+  );
   const [visibleTraces, setVisibleTraces] = useState(PAGE_SIZE);
   const handleLoadMoreTraces = () => {
     setVisibleTraces((prev) => prev + PAGE_SIZE);
@@ -65,11 +83,23 @@ export const SessionAnnotationProcessor: React.FC<
   );
   const [isRedesignBannerDismissed, setIsRedesignBannerDismissed] =
     useLocalStorage("sessionRedesignBannerDismissed", false);
+  const sessionFilters = sessionViewConfig?.filters ?? EMPTY_FILTER_STATE;
+  const traceListFilters =
+    isV4 && isSessionTimelineEnabled
+      ? sessionFilters.filter((filter) => {
+          if (filter.column === "traceName") return true;
+          return sessionViewConfig?.unmatchedTraces === "hide";
+        })
+      : EMPTY_FILTER_STATE;
 
   // Fetch traces separately when v4 beta is enabled (events table path)
   // The byIdWithScoresFromEvents endpoint doesn't include traces array
   const tracesFromEventsQuery = api.sessions.tracesFromEvents.useQuery(
-    { projectId, sessionId: item.objectId },
+    {
+      projectId,
+      sessionId: item.objectId,
+      filter: traceListFilters.length > 0 ? traceListFilters : undefined,
+    },
     {
       enabled: isV4,
       retry: shouldRetryResourceQuery,
@@ -199,6 +229,9 @@ export const SessionAnnotationProcessor: React.FC<
                 color="outline"
                 text={`Total traces: ${totalTracesForBadge}`}
               />
+              {isV4 && isSessionTimelineEnabled && sessionViewConfig && (
+                <Badge color="outline" text="Custom session view" />
+              )}
             </div>
           </div>
         </div>
@@ -231,32 +264,63 @@ export const SessionAnnotationProcessor: React.FC<
                 0,
               )}
             >
-              {({ disabled, openDrawer }) => (
-                <ConnectedModernSessionBodyTimeline
-                  transcriptSource="generations"
-                  sidebarMode="collapsible"
-                  key={`${projectId}:${item.objectId}`}
-                  projectId={projectId}
-                  sessionId={item.objectId}
-                  tracesState={
-                    tracesFromEventsQuery.isSuccess
-                      ? { type: "loaded", traces: tracesFromEventsQuery.data }
-                      : { type: "loading" }
-                  }
-                  openPeek={openPeek}
-                  annotationActions={{
-                    commentCounts: asCommentCounts(traceCommentCounts.data),
-                    commentsDisabled: disabled,
-                    onOpenComments: (traceId) =>
-                      openDrawer({
-                        type: "comments",
-                        objectId: traceId,
-                        objectType: "TRACE",
-                      }),
-                    onOpenCorrections: openDialog,
-                  }}
-                />
-              )}
+              {({ disabled, openDrawer }) =>
+                sessionViewConfig?.viewMode === "list" ? (
+                  <SessionDetailStoreProvider store={sessionDetailStore}>
+                    <ConnectedSessionListBody
+                      key={`${projectId}:${item.objectId}`}
+                      projectId={projectId}
+                      sessionId={item.objectId}
+                      sessionMinTimestamp={data.minTimestamp}
+                      sessionMaxTimestamp={data.maxTimestamp}
+                      tracesState={
+                        tracesFromEventsQuery.isSuccess
+                          ? {
+                              type: "loaded",
+                              traces: tracesFromEventsQuery.data,
+                            }
+                          : { type: "loading" }
+                      }
+                      openPeek={openPeek}
+                      traceCommentCounts={traceCommentCounts.data}
+                      filterState={sessionFilters.filter(
+                        (filter) => filter.column !== "traceName",
+                      )}
+                      filterMeasurementKey={JSON.stringify(sessionFilters)}
+                      viewLabel={null}
+                      onCustomizeView={null}
+                      showInlineToolCalls
+                      showSystemPrompt
+                      activeFilterCount={sessionFilters.length}
+                    />
+                  </SessionDetailStoreProvider>
+                ) : (
+                  <ConnectedModernSessionBodyTimeline
+                    sidebarMode="collapsible"
+                    filterState={sessionFilters}
+                    key={`${projectId}:${item.objectId}`}
+                    projectId={projectId}
+                    sessionId={item.objectId}
+                    tracesState={
+                      tracesFromEventsQuery.isSuccess
+                        ? { type: "loaded", traces: tracesFromEventsQuery.data }
+                        : { type: "loading" }
+                    }
+                    openPeek={openPeek}
+                    annotationActions={{
+                      commentCounts: asCommentCounts(traceCommentCounts.data),
+                      commentsDisabled: disabled,
+                      onOpenComments: (traceId) =>
+                        openDrawer({
+                          type: "comments",
+                          objectId: traceId,
+                          objectType: "TRACE",
+                        }),
+                      onOpenCorrections: openDialog,
+                    }}
+                  />
+                )
+              }
             </CommentDrawerController>
           )}
         </DialogController>
