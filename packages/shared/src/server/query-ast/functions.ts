@@ -5,7 +5,6 @@ import {
   OperatorNode,
   ParensNode,
   PrimitiveValueListNode,
-  RawNode,
   SelectQueryNode,
   TupleNode,
   ValueListNode,
@@ -63,6 +62,7 @@ const ALLOWED_FUNCTIONS: ReadonlySet<string> = new Set([
   "lengthUTF8",
   "like",
   "lower",
+  "map",
   "mapExists",
   "mapFilter",
   "mapFromArrays",
@@ -124,6 +124,17 @@ const ALLOWED_FUNCTIONS: ReadonlySet<string> = new Set([
   "uniqIf",
 ]);
 
+export function isAllowedFunction(name: string): boolean {
+  return ALLOWED_FUNCTIONS.has(name);
+}
+
+/** The error for a call outside {@link ALLOWED_FUNCTIONS}, built or raw. */
+export function functionNotAllowedError(name: string): QueryCompileError {
+  return new QueryCompileError(
+    `Function "${name}" is not on the allowlist in functions.ts: a ClickHouse function can read a table or server state the tenancy pass cannot scope. Use a helper from extensions.ts, or add the name there once you checked it reads no relation.`,
+  );
+}
+
 /** `in`, `not in`, `global in`, `global not in`, any case. */
 const IN_OPERATOR = /(^|\s)in$/i;
 
@@ -147,14 +158,13 @@ export class FunctionAllowlistPlugin implements KyselyPlugin {
 export function assertAllowedCalls(root: OperationNode): void {
   walkNodes(root, (node) => {
     const name = functionName(node);
-    if (name !== undefined && !ALLOWED_FUNCTIONS.has(name)) {
-      throw new QueryCompileError(
-        `Function "${name}" is not on the allowlist in functions.ts: a ClickHouse function can read a table or server state the tenancy pass cannot scope. Use a helper from extensions.ts, or add the name there once you checked it reads no relation.`,
-      );
+    if (name !== undefined && !isAllowedFunction(name)) {
+      throw functionNotAllowedError(name);
     }
     if (
       BinaryOperationNode.is(node) &&
-      IN_OPERATOR.test(operatorText(node.operator).trim()) &&
+      OperatorNode.is(node.operator) &&
+      IN_OPERATOR.test(node.operator.operator) &&
       !isInOperand(node.rightOperand)
     ) {
       throw new UnscopedRelationError(
@@ -162,15 +172,6 @@ export function assertAllowedCalls(root: OperationNode): void {
       );
     }
   });
-}
-
-/** `in` for `OperatorNode("in")` and for raw sql`in` alike. */
-function operatorText(node: OperationNode): string {
-  if (OperatorNode.is(node)) return node.operator;
-  if (RawNode.is(node) && node.parameters.length === 0) {
-    return node.sqlFragments.join("");
-  }
-  return "";
 }
 
 /**

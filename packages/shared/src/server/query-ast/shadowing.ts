@@ -20,6 +20,7 @@ import { UnscopedRelationError } from "./errors";
 import {
   ArrayJoinNode,
   FinalTableNode,
+  PLAIN_IDENTIFIER,
   unwrapFinalTable,
   walkNodes,
 } from "./nodes";
@@ -119,8 +120,6 @@ function expressionNames(
   return [];
 }
 
-const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 /**
  * The name an alias or lambda parameter binds, as ClickHouse reads it: `t`
  * for `as t`, `as sql.id("t")`, ``as sql`t` `` and the lambda parameter
@@ -131,7 +130,7 @@ function boundName(node: OperationNode): string {
   // The compiler rejects an identifier that is not a plain name.
   if (IdentifierNode.is(node)) return node.name;
   const name = nameText(node);
-  if (name === undefined || !PLAIN_NAME.test(name)) {
+  if (name === undefined || !PLAIN_IDENTIFIER.test(name)) {
     throw new UnscopedRelationError(
       "An alias or lambda parameter must be a plain name: the shadowing check cannot tell which relation another shape would shadow.",
     );

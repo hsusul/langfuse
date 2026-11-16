@@ -195,11 +195,23 @@ export const WithFillNode = {
   },
 };
 
+/** A name ClickHouse reads without quotes, which the compiler writes as is. */
+export const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 // A type name with optional arguments: identifiers, integers, nested types
 // and quoted time zones (`DateTime64(3, 'UTC')`). No `{`, `}` or `:`, so the
 // type cannot close its `{p:<type>}` placeholder.
 const PLACEHOLDER_TYPE =
   /^[A-Za-z][A-Za-z0-9_]*(\((?:[A-Za-z0-9_(), ]|'[A-Za-z0-9_/+-]*')*\))?$/;
+
+/**
+ * A type a `{p:<type>}` placeholder may bind as: a value type. `Identifier`
+ * substitutes the bound string as a name, so `t.id in {p:Identifier}` bound
+ * to `scores` reads the table.
+ */
+export function isPlaceholderType(type: string): boolean {
+  return PLACEHOLDER_TYPE.test(type) && !/identifier/i.test(type);
+}
 
 /** The payload of a `typedValue` bind (extensions.ts): value and placeholder type. */
 export class TypedParam {
@@ -207,9 +219,9 @@ export class TypedParam {
     readonly value: unknown,
     readonly type: string,
   ) {
-    if (!PLACEHOLDER_TYPE.test(type)) {
+    if (!isPlaceholderType(type)) {
       throw new QueryCompileError(
-        `typedValue type must be a ClickHouse type name, got ${type}.`,
+        `typedValue type must be a ClickHouse value type name, got ${type}.`,
       );
     }
   }

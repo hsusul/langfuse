@@ -303,12 +303,19 @@ and it is where tenancy is enforced:
    present, so `qb.compile()` without the plugin also fails. Value binds take
    their ClickHouse type from the compared column's registry entry when one is
    in scope (`scores.value > 1` → `{p:Float64}`).
-5. Raw-SQL table sources (``selectFrom(sql`...`)``), raw fragments embedding
-   a `SELECT`/`FROM`/`JOIN` in SELECT/WHERE, and a `sql.table(...)` reference
-   inside raw SQL in any position throw `UnscopedRelationError`, as
-   does any FROM/JOIN source that is neither a table reference nor a subquery
-   (table functions such as `remote()`, `clusterAllReplicas()`, `merge()`).
-   Kysely's own keyword fragments (`asc`/`desc`) are not relations.
+5. Raw-SQL table sources (``selectFrom(sql`...`)``) throw `UnscopedRelationError`, as does any FROM/JOIN source that is neither a table reference nor a subquery (table functions such as `remote()`, `clusterAllReplicas()`, `merge()`). Raw SQL elsewhere is for what the builder cannot express, and only as a self-contained expression. `compileClickhouseQuery`, `renderClickhouseExpression` and `renderClickhouseSelections` check every raw fragment with `assertRawSqlSafe` (`raw.ts`); callers never call it themselves. The check reads the text as ClickHouse does, with nested raw SQL and `sql.id`/`sql.ref` names spliced in.
+   - Allowed: columns, values and allowlisted functions in one expression, as in ``sql`t.id in (${a}, lower(${b}))` ``. A parameter may be raw SQL, a plain name (`sql.id`, `sql.ref`), a value (bound or `sql.lit`) or a subquery, which the tenancy pass scopes.
+   - Rejected with `UnscopedRelationError`:
+     - text around the select: `modifyFront`/`modifyEnd`, as in ``modifyEnd(sql`or 1 = 1`)``;
+     - a table or an unlisted parameter kind: `sql.table("scores")`, `sql.ref("scores").as("s")`, `eb.parens(…)`;
+     - a name, value or subquery spliced inside a quote the raw text opened, as in ``sql`t.id = '${literal(") or (1 = 1 or t.id = ")}'` ``, where the inlined value's own quotes close the raw quote;
+     - text that leaves its slot: a comment (`1 = 1 --`), `;`, a `$$…$$` heredoc string, a `{p:Identifier}` query parameter, a non-ASCII or control character outside quotes (ClickHouse skips U+200B as whitespace), an unbalanced or crossed bracket or quote (`[t.id) or (1 = 1]`);
+     - a clause keyword: `select`, `from`, `join`, `union`, `intersect`, `except`, `settings`, `format`, `into`;
+     - `apply`: ``t.* apply file`` calls `file` on each column with no bracket, outside the allowlist.
+   - Then the whole emitted SQL is lexed (`assertCompiledSqlConfined`), at every compile entry point, so the tokens raw SQL and the nodes beside it glue are checked as ClickHouse reads them:
+     - rejected with `QueryCompileError`: a comment, `;`, heredoc, non-ASCII or control character outside quotes, `apply`, and braces other than `{name:Type}` bind placeholders, as in ``sql`0 -${sql.lit(-1)}` `` writing the comment `0 --1`. Unary minus writes `- -1`, not `--1`;
+     - rejected with `UnscopedRelationError`: a name on the right of `in`, bare, quoted or as an element of a bracketed list (`t.id in (scores)`, `in(t.id, scores)`), also when it is glued from parts, as ``eb(eb.not(sql`t.id in`), sql``, sql.id("scores"))`` writes `not t.id in scores`. A subquery, a bind, a literal or a call stays allowed;
+     - rejected with `QueryCompileError`, as in the builder: a call outside the allowlist in `functions.ts`, as in `dictGet(…)` or ``sql`getSetting${subquery}` ``. The select's clause keywords and word operators before `(` (`from (select …)`, `over(…)`, `cast(x as T)`) are no call, nor is a type after `as` or `::`.
 
 Every pass and the compiler read a FROM/JOIN item through `describeRelation`
 (`relations.ts`): it peels one FINAL and then one alias, so `scores as s final`

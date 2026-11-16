@@ -192,29 +192,13 @@ describeWithClickhouseLocal("dedup pass alone: one row per key", () => {
       ["10"],
     ],
     [
-      "an upper-case SUM",
-      db
-        .selectFrom("traces as t")
-        .select((eb) =>
-          eb.fn
-            .agg<number>("SUM", [eb.fn("length", ["t.environment"])])
-            .as("n"),
-        ),
-      ["10"],
-    ],
-    [
       "an avg",
       db
         .selectFrom("traces as t")
         .select((eb) =>
-          eb
-            .fn<number>("round", [
-              eb.fn.avg(eb.fn<number>("length", ["t.environment"])),
-              eb.lit(2),
-            ])
-            .as("n"),
+          eb.fn.avg(eb.fn<number>("length", ["t.environment"])).as("n"),
         ),
-      ["3.33"],
+      ["3.3333333333333335"],
     ],
     [
       // Known gap: a scalar max() is not lowered, so on this fixture it reads

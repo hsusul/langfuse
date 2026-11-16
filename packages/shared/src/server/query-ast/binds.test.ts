@@ -78,6 +78,16 @@ describe("typedValue", () => {
     );
   });
 
+  // `t.id in {p:Identifier}` bound to `scores` reads the table.
+  it.each(["Identifier", "Array(Identifier)"])(
+    "rejects the type %s, which binds a name",
+    (type) => {
+      expect(() => typedValue<string>("scores", type)).toThrow(
+        QueryCompileError,
+      );
+    },
+  );
+
   it("rejects a typed value inside an IN list, whose array bind would drop its type", () => {
     expect(() =>
       compile(

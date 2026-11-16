@@ -958,9 +958,24 @@ describe("literal", () => {
     expect(renderClickhouseExpression(literal("it's"))).toBe("'it''s'");
   });
 
-  it("rejects a backslash, which ClickHouse reads as an escape", () => {
-    expect(() => literal("a\\")).toThrow(QueryCompileError);
-  });
+  // `t.id = 'a\' or t.id = ') or 1 = 1 --'` would end the tenancy scope.
+  it.each([
+    ["literal", literal("a\\")],
+    ["sql.lit", sql.lit("a\\")],
+  ])(
+    "rejects a backslash in %s, which ClickHouse reads as an escape",
+    (_, value) => {
+      expect(() =>
+        compileClickhouseQuery(
+          getClickhouseKysely()
+            .selectFrom("traces as t")
+            .select("t.id")
+            .where("t.id", "=", value),
+          projectId,
+        ),
+      ).toThrow(QueryCompileError);
+    },
+  );
 });
 
 describe("startsWith", () => {

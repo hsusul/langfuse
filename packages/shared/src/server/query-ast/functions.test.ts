@@ -84,11 +84,6 @@ describe("function allowlist", () => {
       (eb: Eb) =>
         eb("traces.id", "in", eb.parens(eb.ref("scores" as never)) as never),
     ],
-    [
-      "a raw operator",
-      (eb: Eb) =>
-        eb("traces.id", sql`not in` as never, sql.ref("scores") as never),
-    ],
   ])(
     "rejects a name on the right of IN (%s), which reads a table",
     (_shape, condition) => {

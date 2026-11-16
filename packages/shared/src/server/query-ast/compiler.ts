@@ -26,6 +26,7 @@ import {
   type PrimitiveValueListNode,
   type RootOperationNode,
   type SelectionNode,
+  type UnaryOperationNode,
   type ValueListNode,
 } from "kysely";
 import type { QueryId } from "kysely";
@@ -33,6 +34,7 @@ import { TupleParam } from "@clickhouse/client";
 
 import {
   ArrayJoinNode,
+  PLAIN_IDENTIFIER,
   TypedParam,
   asCustomNode,
   compileCustomNode,
@@ -41,6 +43,7 @@ import {
   type WithFillNode,
 } from "./nodes";
 import { QueryCompileError, UnscopedRelationError } from "./errors";
+import { assertCompiledSqlConfined } from "./raw";
 import { selectRelations } from "./relations";
 import { TABLE_BIND_TYPES, lookupTable } from "./schema";
 import { assertTenancyStamped } from "./tenancy";
@@ -52,7 +55,6 @@ const ARRAY_JOIN_SQL: Record<ArrayJoinNode["variant"], string> = {
   inner: "inner array join",
 };
 
-const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const TUPLE_INDEX = /^[1-9][0-9]*$/;
 
 const DATE_WRAPPER_FNS = new Set([
@@ -281,6 +283,8 @@ export class ClickHouseQueryCompiler extends DefaultQueryCompiler {
    * {@link visitColumn} does not check it as bare. Reset by that visit.
    */
   private visitingQualifiedColumn = false;
+  /** Set after a unary `-`, until its operand writes its first text. */
+  private afterUnaryMinus = false;
 
   /** Placeholders are named `<paramPrefix>1`, `<paramPrefix>2`, … */
   constructor(private readonly paramPrefix = "p") {
@@ -316,7 +320,9 @@ export class ClickHouseQueryCompiler extends DefaultQueryCompiler {
     this.selectScopes = [];
     this.lambdaParams = [];
     assertTenancyStamped(node);
-    return super.compileQuery(node, queryId);
+    const compiled = super.compileQuery(node, queryId);
+    assertCompiledSqlConfined(compiled.sql);
+    return compiled;
   }
 
   /**
@@ -331,6 +337,7 @@ export class ClickHouseQueryCompiler extends DefaultQueryCompiler {
         "A standalone expression cannot bind parameters; inline the value or build the whole query on the AST.",
       );
     }
+    assertCompiledSqlConfined(this.getSql());
     return this.getSql();
   }
 
@@ -360,7 +367,36 @@ export class ClickHouseQueryCompiler extends DefaultQueryCompiler {
     } finally {
       this.selectScopes.pop();
     }
+    assertCompiledSqlConfined(this.getSql());
     return { sql: this.getSql(), params: { ...this.namedParameters } };
+  }
+
+  /**
+   * Kysely writes unary minus without a space, so before an operand that
+   * starts with `-` (`-1`, `-x`) it would write the comment `--`. A space
+   * goes between them: `- -1`.
+   */
+  protected override visitUnaryOperation(node: UnaryOperationNode): void {
+    if (!OperatorNode.is(node.operator) || node.operator.operator !== "-") {
+      super.visitUnaryOperation(node);
+      return;
+    }
+    this.append("-");
+    this.afterUnaryMinus = true;
+    try {
+      this.visitNode(node.operand);
+    } finally {
+      this.afterUnaryMinus = false;
+    }
+  }
+
+  protected override append(text: string): void {
+    if (this.afterUnaryMinus && text.length > 0) {
+      this.afterUnaryMinus = false;
+      super.append(text.startsWith("-") ? ` ${text}` : text);
+      return;
+    }
+    super.append(text);
   }
 
   // Emit identifiers unquoted. `clickhouse format` normalizes to unquoted
@@ -504,6 +540,35 @@ export class ClickHouseQueryCompiler extends DefaultQueryCompiler {
     throw new QueryCompileError(
       `Collation "${node.collation.name}" is not supported: ClickHouse expects a string literal after collate.`,
     );
+  }
+
+  /**
+   * Every string the compiler inlines (`literal(...)`, `sql.lit`) passes here.
+   * Kysely doubles `'` but leaves `\`, which ClickHouse reads as an escape:
+   * `'a\'` would not end the string, and the next literal's text would run
+   * as SQL.
+   */
+  protected override sanitizeStringLiteral(value: string): string {
+    if (value.includes("\\")) {
+      throw new QueryCompileError(
+        `An inlined string literal holds a backslash, which ClickHouse reads as an escape: ${value}. Bind the value instead.`,
+      );
+    }
+    return super.sanitizeStringLiteral(value);
+  }
+
+  /**
+   * A JSON path key (`'$."key"'`) is written inside a string literal, where
+   * ClickHouse reads `\` as an escape: `\` before Kysely's doubled `''`
+   * ends the string early.
+   */
+  protected override sanitizeJSONPathMemberValue(value: string): string {
+    if ([...value].some(isEscapeOrControl)) {
+      throw new QueryCompileError(
+        `A JSON path key holds a backslash or a control character, which ClickHouse reads inside the path's string literal: ${JSON.stringify(value)}.`,
+      );
+    }
+    return super.sanitizeJSONPathMemberValue(value);
   }
 
   protected override appendValue(parameter: unknown): void {
@@ -1325,3 +1390,9 @@ type ColumnBindTypes = Readonly<Record<string, BindType | null>>;
  * compiler can't see its columns.
  */
 type RelationBindTypes = ColumnBindTypes | OpaqueRelation;
+
+/** `\`, which ClickHouse reads as an escape in a string, or a control character. */
+function isEscapeOrControl(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return char === "\\" || code < 0x20 || code === 0x7f;
+}

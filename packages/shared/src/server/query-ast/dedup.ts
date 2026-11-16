@@ -169,7 +169,7 @@ function isExistence(node: SelectQueryNode): boolean {
   const expr = unwrapSelection(selections[0]);
   if (!expr) return false;
   if (ValueNode.is(expr) && expr.value === 1) return true;
-  return AggregateFunctionNode.is(expr) && isCountFunc(expr.func);
+  return AggregateFunctionNode.is(expr) && expr.func === "count";
 }
 
 function isLimitOne(node: SelectQueryNode): boolean {
@@ -181,7 +181,7 @@ function hasWrappingAggregate(node: SelectQueryNode): boolean {
   let found = false;
   walkOuterSelect(node.selections, (child) => {
     if (!AggregateFunctionNode.is(child)) return;
-    if (child.over || DOUBLE_COUNT_AGGREGATES.has(child.func.toLowerCase())) {
+    if (child.over || DOUBLE_COUNT_AGGREGATES.has(child.func)) {
       found = true;
     }
   });
@@ -194,10 +194,6 @@ function hasAnyAggregate(node: SelectQueryNode): boolean {
     if (AggregateFunctionNode.is(child)) found = true;
   });
   return found;
-}
-
-function isCountFunc(func: string): boolean {
-  return func.toLowerCase() === "count";
 }
 
 function unwrapSelection(selection: OperationNode): OperationNode | undefined {
